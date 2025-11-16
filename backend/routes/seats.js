@@ -14,14 +14,27 @@ router.get("/:libraryId", auth, async (req, res) => {
   try {
     const { libraryId } = req.params;
 
+    // Ensure the library belongs to the authenticated manager
     const lib = await Library.findOne({
       _id: libraryId,
       managerId: req.manager._id,
     });
-    if (!lib) return res.status(403).json({ message: "Forbidden" });
+    if (!lib) {
+      console.log(`Access denied: Library ${libraryId} does not belong to manager ${req.manager._id}`);
+      return res.status(403).json({ message: "Access denied: This library does not belong to you" });
+    }
+    
+    console.log(`Fetching seats for library ${libraryId} (Manager: ${req.manager.email})`);
 
-    // FETCH SEATS WITHOUT POPULATE
-    const seats = await Seat.find({ libraryId }).lean();
+    // Fetch seats and populate student details, sorted by seatNumber
+    const seats = await Seat.find({ libraryId })
+      .sort({ seatNumber: 1 }) // Sort by seatNumber ascending (1, 2, 3, ...)
+      .populate({
+        path: "shifts.studentId",
+        model: "Student",
+        select: "name rollNo contact email",
+      })
+      .lean();
 
     res.json({ library: lib, seats });
   } catch (err) {
@@ -29,6 +42,50 @@ router.get("/:libraryId", auth, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// DELETE /api/seats/:libraryId/:seatNumber/book/:shiftName
+router.delete(
+  "/:libraryId/:seatNumber/book/:shiftName",
+  auth,
+  async (req, res) => {
+    try {
+      const { libraryId, seatNumber, shiftName } = req.params;
+
+      // Ensure manager owns this library
+      const lib = await Library.findOne({
+        _id: libraryId,
+        managerId: req.manager._id,
+      });
+      if (!lib) return res.status(403).json({ message: "Forbidden" });
+
+      // Find and update the seat
+      const seat = await Seat.findOne({ libraryId, seatNumber });
+      if (!seat) return res.status(404).json({ message: "Seat not found" });
+
+      // Find the shift and remove the booking
+      const shiftIndex = seat.shifts.findIndex((s) => s.name === shiftName);
+      if (shiftIndex === -1)
+        return res.status(404).json({ message: "Shift not found" });
+
+      // Get the student ID before removing it
+      const studentId = seat.shifts[shiftIndex].studentId;
+
+      // Remove student booking from the shift
+      seat.shifts[shiftIndex].studentId = null;
+      await seat.save();
+
+      // Delete the student record if it exists
+      if (studentId) {
+        await Student.findByIdAndDelete(studentId);
+      }
+
+      res.json({ message: "Booking deleted successfully" });
+    } catch (err) {
+      console.error("DELETE BOOKING ERROR:", err);
+      res.status(500).json({ message: "Server error" });
+    }
+  }
+);
 
 /**
  * POST /api/seats/:libraryId/:seatNumber/book
@@ -40,10 +97,12 @@ router.post("/:libraryId/:seatNumber/book", auth, async (req, res) => {
     const { libraryId, seatNumber } = req.params;
     const { name, rollNo, contact, shiftName } = req.body;
 
-    if (!name || !shiftName)
-      return res
-        .status(400)
-        .json({ message: "Missing required fields: name and shiftName" });
+    if (!name || !shiftName || !rollNo || !contact) {
+      return res.status(400).json({
+        message:
+          "Missing required fields. Please provide name, roll number, contact, and shift.",
+      });
+    }
 
     // ensure manager owns this library
     const lib = await Library.findOne({
@@ -78,6 +137,7 @@ router.post("/:libraryId/:seatNumber/book", auth, async (req, res) => {
       name,
       rollNo,
       contact,
+      email: req.body.email || undefined,
       seatNumber: Number(seatNumber),
       shiftName,
     });
@@ -95,6 +155,71 @@ router.post("/:libraryId/:seatNumber/book", auth, async (req, res) => {
 });
 
 /**
+ * PUT /api/seats/:libraryId/:seatNumber/book/:shiftName
+ * Body: { name, rollNo, contact, email }
+ * Updates student information for a booked seat shift
+ */
+router.put(
+  "/:libraryId/:seatNumber/book/:shiftName",
+  auth,
+  async (req, res) => {
+    try {
+      const { libraryId, seatNumber, shiftName } = req.params;
+      const { name, rollNo, contact, email } = req.body;
+
+      if (!name || !rollNo || !contact) {
+        return res.status(400).json({
+          message:
+            "Missing required fields. Please provide name, roll number, and contact.",
+        });
+      }
+
+      // Ensure manager owns this library
+      const lib = await Library.findOne({
+        _id: libraryId,
+        managerId: req.manager._id,
+      });
+      if (!lib) return res.status(403).json({ message: "Forbidden" });
+
+      // Find the seat
+      const seat = await Seat.findOne({ libraryId, seatNumber: Number(seatNumber) });
+      if (!seat) return res.status(404).json({ message: "Seat not found" });
+
+      // Find the shift
+      const shiftIndex = seat.shifts.findIndex((s) => s.name === shiftName);
+      if (shiftIndex === -1)
+        return res.status(404).json({ message: "Shift not found" });
+
+      // Check if shift is booked
+      if (!seat.shifts[shiftIndex].studentId) {
+        return res.status(400).json({ message: "Shift is not booked" });
+      }
+
+      // Update student information
+      const student = await Student.findByIdAndUpdate(
+        seat.shifts[shiftIndex].studentId,
+        {
+          name,
+          rollNo,
+          contact,
+          email: email || undefined,
+        },
+        { new: true }
+      );
+
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      res.json({ message: "Student information updated", student });
+    } catch (err) {
+      console.error("UPDATE STUDENT ERROR:", err);
+      res.status(500).json({ message: "Server error" });
+    }
+  }
+);
+
+/**
  * GET single seat details including shifts & student info
  * GET /api/seats/:libraryId/:seatNumber
  */
@@ -110,7 +235,11 @@ router.get("/:libraryId/:seatNumber", auth, async (req, res) => {
     const seat = await Seat.findOne({
       libraryId,
       seatNumber: Number(seatNumber),
-    }).populate("shifts.studentId", "-__v -createdAt");
+    }).populate({
+      path: "shifts.studentId",
+      model: "Student",
+      select: "name rollNo contact email",
+    });
     if (!seat) return res.status(404).json({ message: "Seat not found" });
 
     res.json({ seat });

@@ -6,14 +6,30 @@ const Seat = require("../models/Seat");
 
 // POST /api/library/register
 // Protected; manager can register a single library (one-to-one)
-router.post("/register", auth, async (req, res) => {
+router.post("/registerlibrary", auth, async (req, res) => {
   try {
     const { name, capacity, quote, location, shifts } = req.body;
     // shifts: array of { name, startTime, endTime } - these are the shift templates for seats
-    if (!name || !capacity || !Array.isArray(shifts) || shifts.length === 0) {
+    if (!name || !Array.isArray(shifts) || shifts.length === 0) {
       return res.status(400).json({
         message: "Missing required fields. Provide name, capacity and shifts.",
       });
+    }
+
+    // validate capacity is a positive number
+    if (typeof capacity !== "number" || capacity <= 0) {
+      return res
+        .status(400)
+        .json({ message: "Capacity must be a positive number" });
+    }
+
+    // validate each shift has required fields
+    for (const s of shifts) {
+      if (!s.name || !s.startTime || !s.endTime) {
+        return res.status(400).json({
+          message: "Each shift must include name, startTime and endTime",
+        });
+      }
     }
 
     // ensure manager doesn't already have a library
@@ -56,30 +72,55 @@ router.post("/register", auth, async (req, res) => {
       .status(201)
       .json({ message: "Library registered", libraryId: library._id });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Library registration error:", err);
+    // return detailed error message and stack for debugging (remove in production)
+    res.status(500).json({ message: err.message, stack: err.stack });
   }
 });
 
 // GET /api/library/me -> fetch manager's library and summary
 router.get("/me", auth, async (req, res) => {
   try {
+    // Ensure we're getting the library for the authenticated manager
     const lib = await Library.findOne({ managerId: req.manager._id }).lean();
-    if (!lib)
+    if (!lib) {
+      console.log(`No library found for manager: ${req.manager._id} (${req.manager.email})`);
       return res
         .status(404)
         .json({ message: "No library found for this manager" });
+    }
 
-    const totalSeats = lib.capacity;
-    // you can fetch counts of booked seats etc if needed
+    console.log(`Fetching library data for manager: ${req.manager.email}, Library ID: ${lib._id}`);
+
+    // Fetch seats along with library data, sorted by seatNumber
+    const seats = await Seat.find({ libraryId: lib._id })
+      .sort({ seatNumber: 1 }) // Sort by seatNumber ascending
+      .lean();
+    
     const bookedCount = await Seat.countDocuments({
       libraryId: lib._id,
       "shifts.studentId": { $ne: null },
     });
 
-    res.json({ library: lib, totalSeats, bookedShiftsCount: bookedCount });
+    // Add counts and manager info to library data
+    const libraryData = {
+      ...lib,
+      bookedSeatsCount: bookedCount,
+      manager: {
+        id: req.manager._id,
+        name: req.manager.name,
+        email: req.manager.email,
+      },
+    };
+
+    console.log(`Returning library data: ${libraryData.name}, ${seats.length} seats`);
+
+    res.json({
+      library: libraryData,
+      seats: seats,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Error fetching library data:", err);
     res.status(500).json({ message: "Server error" });
   }
 });

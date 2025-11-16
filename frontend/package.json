@@ -13,6 +13,7 @@
     "@tanstack/react-query": "^5.90.5",
     "axios": "^1.12.2",
     "bootstrap": "^5.3.8",
+    "dexie": "^4.2.1",
     "lucide-react": "^0.548.0",
     "react": "^19.2.0",
     "react-bootstrap": "^2.10.10",

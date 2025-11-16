@@ -8,13 +8,7 @@ const libraryRoutes = require("./routes/library");
 const seatRoutes = require("./routes/seats");
 
 const app = express();
-app.use(
-  cors({
-    origin: "http://localhost:5173", // your frontend
-    credentials: true,
-  })
-);
-
+app.use(cors()); // Allow all origins during development
 app.use(express.json());
 
 // connect mongo
