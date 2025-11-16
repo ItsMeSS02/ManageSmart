@@ -1,7 +1,7 @@
 import axios from "axios";
 import { apiCallWithOfflineSupport } from "./services/offlineSync";
 
-const API_URL = "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const getToken = () => localStorage.getItem("token");
 
@@ -58,7 +58,7 @@ export const bookSeat = async ({ libraryId, seat, studentDetails }) => {
       seat,
       studentDetails,
     });
-    
+
     const response = await apiCallWithOfflineSupport(
       "POST",
       `/seats/${libraryId}/${seat.seatNumber}/book`,
@@ -70,7 +70,7 @@ export const bookSeat = async ({ libraryId, seat, studentDetails }) => {
         shiftName: studentDetails.shiftName,
       }
     );
-    
+
     return response.data;
   } catch (error) {
     console.error("Error booking seat:", error);
