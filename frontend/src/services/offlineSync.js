@@ -177,6 +177,24 @@ export const getDataWithOfflineFallback = async (getOnlineData, getOfflineData) 
   }
 };
 
+// 🔴 ADD THIS FOR SEAT BOOKING OFFLINE SUPPORT
+export const queueOfflineOperation = async ({ payload, operationId }) => {
+  const { libraryId, seatNumber } = payload;
+
+  await dbService.addPendingOperation({
+    type: "BOOK_SEAT",
+    method: "POST",
+    endpoint: `/seats/${libraryId}/${seatNumber}/book`,
+    data: {
+      ...payload,
+      operationId,
+    },
+  });
+
+  console.log("Queued offline seat booking:", operationId);
+};
+
+
 export default {
   isOnline,
   setupOnlineListener,
@@ -186,4 +204,6 @@ export default {
   apiCallWithOfflineSupport,
   getDataWithOfflineFallback,
 };
+
+
 

@@ -5,12 +5,10 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
 const getToken = () => localStorage.getItem("token");
 
-console.log("API_URL:", API_URL);
 
 export const api = axios.create({
   baseURL: API_URL,
   validateStatus: (status) => {
-    console.log("API Response Status:", status);
     return status >= 200 && status < 300;
   },
   timeout: 10000, // 10 second timeout
@@ -64,7 +62,7 @@ export const bookSeat = async ({ libraryId, seat, studentDetails }) => {
       `/seats/${libraryId}/${seat.seatNumber}/book`,
       {
         name: studentDetails.name,
-        rollNo: studentDetails.rollNo,
+        dateofJoin: studentDetails.dateofJoin,
         contact: studentDetails.phone,
         email: studentDetails.email,
         shiftName: studentDetails.shiftName,
@@ -124,7 +122,7 @@ export const updateStudent = async ({
       `/seats/${libraryId}/${seatNumber}/book/${shiftName}`,
       {
         name: studentDetails.name,
-        rollNo: studentDetails.rollNo,
+        dateofJoin: studentDetails.dateofJoin,
         contact: studentDetails.phone,
         email: studentDetails.email,
       }

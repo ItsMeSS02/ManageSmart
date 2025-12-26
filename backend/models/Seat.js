@@ -20,6 +20,10 @@ const SeatSchema = new mongoose.Schema({
     ref: "Library",
     required: true,
   },
+  lastUpdatedAt: {
+  type: Date,
+  default: Date.now
+},
   seatNumber: { type: Number, required: true },
   shifts: { type: [ShiftSchema], default: [] },
 });
